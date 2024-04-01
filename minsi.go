@@ -1,6 +1,7 @@
 package minsi
 
 import (
+	"database/sql"
 	"net/http"
 	"reflect"
 	"strings"
@@ -12,17 +13,34 @@ type Crud = crud.Crud
 
 type Model = crud.Model
 
-type CrudHandler interface {
-	Index(http.ResponseWriter, *http.Request)
-	Detail(http.ResponseWriter, *http.Request)
-	New(http.ResponseWriter, *http.Request)
-	Update(http.ResponseWriter, *http.Request)
-}
+// type CrudHandler interface {
+// 	Index(http.ResponseWriter, *http.Request)
+// 	Detail(http.ResponseWriter, *http.Request)
+// 	New(http.ResponseWriter, *http.Request)
+// 	Update(http.ResponseWriter, *http.Request)
+// }
 
 type AdminCtx struct {
-	Request *http.Request
+	//Request *http.Request
+	db *sql.DB
 	// Assets
 	Crud Crud
+}
+
+func (ctx *AdminCtx) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+
+	ctx.Crud.HandleAction("index")(ctx.db)(w, r)
+}
+
+func MakeAdmin(m any, db *sql.DB) *AdminCtx {
+
+	c, _ := crud.MakeCrud(m)
+
+	return &AdminCtx{
+		db:   db,
+		Crud: c,
+	}
+
 }
 
 func indirectType(t reflect.Type) reflect.Type {
