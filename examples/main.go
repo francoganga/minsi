@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
-	"net/http"
 	"reflect"
 
 	"github.com/francoganga/minsi/crud"
@@ -93,19 +92,14 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// actions := []string{crud.CRUD_PAGE_DETAIL}
 
-	defer db.Close()
+	admin, err := crud.NewAdmin[Transactions](db)
 
-	c, err := crud.NewCrud[Transactions](db)
 	if err != nil {
 		log.Fatal(err)
 	}
-	c.ModelNameSingular = "User"
-	c.ModelNamePlural = "Users"
 
-	http.HandleFunc("/", c.HandleAction("index"))
+	fmt.Printf("admin=%#v\n", admin)
 
-	fmt.Println("Listening on :4000")
-	http.ListenAndServe(":4000", nil)
 }
-

@@ -43,16 +43,34 @@ type CrudInterface[T any] interface {
 	// Edit(id any) (T, error)
 	// Delete(id any) (T, error)
 
+	SetModelNamePlural(modelNamePlural string)
+	SetModelNameSingular(ModelNameSingular string)
+	ModelName() string
 }
 
 type CrudHandler http.HandlerFunc
 
-type AdminInterface[T any] interface {
-	ConfigureCrud(crud CrudInterface[T])
-	// TODO: define actions type
-	ConfigureActions() []string
-	// TODO: define Filters type
-	ConfigureFilters(filters []any)
+// type AdminInterface[T any] interface {
+// 	Actions() []string
+// 	ConfigureCrud(crud CrudInterface[T])
+// 	// TODO: define actions type
+// 	ConfigureActions() []string
+// 	// TODO: define Filters type
+// 	ConfigureFilters(filters []any)
+// }
+
+type adminOptions struct {
+	actions []string
+	filters []any
+}
+type AdminOptions func(*adminOptions) error
+
+func WithActions(actions []string) AdminOptions {
+	return func(opts *adminOptions) error {
+		opts.actions = actions
+
+		return nil
+	}
 }
 
 // basic admin type
@@ -62,19 +80,77 @@ type Admin[T any] struct {
 	filters []any
 }
 
-type User struct{}
+func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
+	a := &Admin[T]{}
+	crud, _ := NewCrud[T](db)
+	a.crud = crud
+	var options adminOptions
 
-// embed the CrudInterface
-type UserCrud struct {
-	CrudInterface[User]
+	for _, opt := range opts {
+		err := opt(&options)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if len(options.actions) > 0 {
+		a.actions = options.actions
+	}
+
+	return a, nil
+}
+
+func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: figure out what model and action we want from the query ex: http://localhost:4000/admin?model=User&action=index
+	// build a some kind of "Context" object thats going to store all the info of the current action
+	// we need to pass some kind of metadata to the template so we know how to render the "entity" (we dont know its type here)
+	type AdminCtx = struct {
+		Model     string
+		Action    string
+		modelType Model
+	}
+
+	items, err := a.crud.Index()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	// TODO: render the template with the items
+
+}
+
+func (a *Admin[T]) ConfigureCrud(crud CrudInterface[T]) {
+	crud.SetModelNamePlural(crud.ModelName() + "s")
+	crud.SetModelNameSingular(crud.ModelName())
+}
+
+func (a *Admin[T]) ConfigureActions() []string {
+	fmt.Println("original ConfigureActions called")
+	return []string{CRUD_PAGE_INDEX, CRUD_PAGE_NEW, CRUD_PAGE_EDIT, CRUD_PAGE_DETAIL}
+}
+
+func (a *Admin[T]) ConfigureFilters(filters []any) {
+	a.filters = filters
+}
+
+func (a *Admin[T]) Actions() []string {
+	return a.actions
+}
+
+func (a *Admin[T]) Dbg() {
+	a.ConfigureCrud(a.crud)
+	a.actions = a.ConfigureActions()
+	a.ConfigureFilters(a.filters)
+
+	fmt.Printf("a: %#v\n", a)
 }
 
 type Crud[T any] struct {
 	db                *sql.DB
 	PageName          string
 	ActionName        string
-	ModelNameSingular string
-	ModelNamePlural   string
+	modelNameSingular string
+	modelNamePlural   string
 
 	handlers map[string]CrudHandler
 	model    Model
@@ -355,3 +431,12 @@ func (c *Crud[T]) HandleAction(action string) CrudHandler {
 	return c.handlers[action]
 }
 
+func (c *Crud[T]) SetModelNamePlural(modelNamePlural string) {
+	c.modelNamePlural = modelNamePlural
+}
+func (c *Crud[T]) SetModelNameSingular(ModelNameSingular string) {
+	c.modelNameSingular = ModelNameSingular
+}
+func (c *Crud[T]) ModelName() string {
+	return c.model.ModelName
+}
