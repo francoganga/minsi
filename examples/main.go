@@ -4,9 +4,10 @@ import (
 	"database/sql"
 	"fmt"
 	"log"
+	"os"
 	"reflect"
 
-	"github.com/francoganga/minsi/crud"
+	"github.com/francoganga/minsi/templates"
 	_ "modernc.org/sqlite"
 )
 
@@ -81,25 +82,13 @@ func Q(m any, db *sql.DB) {
 
 func main() {
 
-	db, err := sql.Open("sqlite", "file:finance.db?cache=shared")
+	renderer := templates.NewRenderer()
 
+	buf, err := renderer.Parse().Key("asd").Layout("layout").Files("layout", "layout2", "index").Execute(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = db.Ping()
-
-	if err != nil {
-		log.Fatal(err)
-	}
-	// actions := []string{crud.CRUD_PAGE_DETAIL}
-
-	admin, err := crud.NewAdmin[Transactions](db)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	fmt.Printf("admin=%#v\n", admin)
-
+	buf.WriteTo(os.Stdout)
 }
+
