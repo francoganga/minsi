@@ -3,7 +3,6 @@ package templates
 import (
 	"bytes"
 	"fmt"
-	"os"
 	"sync"
 	"text/template"
 )
@@ -57,7 +56,7 @@ func (r *Renderer) parse(build *rendererBuild) (*TemplateParsed, error) {
 			build.directories[k] = fmt.Sprintf("%s/*%s", v, ".tmpl")
 		}
 
-		tpl := os.DirFS("templates")
+		tpl := Get()
 
 		parsed, err = parsed.ParseFS(tpl, append(build.files, build.directories...)...)
 
@@ -144,4 +143,3 @@ func (r *Renderer) Load(key string) (*TemplateParsed, error) {
 
 	return tmpl, nil
 }
-

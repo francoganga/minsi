@@ -1,5 +1,7 @@
 {{define "title"}}Index{{end}}
 {{define "scripts"}}{{end}}
 {{define "body" }}
-	Hello world index page with layout!!!
+ {{ range .Fields }}
+    {{.ID}}
+ {{end}}
 {{end}}

@@ -1,14 +1,24 @@
 package templates
 
 import (
+	"bytes"
+	"embed"
 	"fmt"
+	"html/template"
 	"io"
-	"text/template"
 )
 
+//go:embed *
+var templates embed.FS
+
+func Get() embed.FS {
+	return templates
+}
+
 type ActionTemplate struct {
-	Title  string
-	layout *template.Template
+	Title   string
+	layout  *template.Template
+	Content *template.Template
 	// TODO: maybe render the form if it's not nil
 	form *Form
 }
@@ -18,38 +28,87 @@ type Form struct {
 }
 
 type FieldInterface interface {
-	Render(io.Writer) error
+	Render() template.HTML
 }
 
 type TextField struct {
-	template *template.Template
-	Label    string
-	Name     string
-	Value    string
+	templateName string
+	Label        string
+	Name         string
+	Value        string
+	ID           string
 }
 
-var _ FieldInterface = (*TextField)(nil)
-var textHtml = `<label for="%s">%s</label>
-<input type="text" name="%s" value="%s">`
+type SelectOption struct {
+	ID    string
+	Value string
+	Label string
+}
+
+type SelectField struct {
+	templateName string
+	Options      []SelectOption
+	Name         string
+	ID           string
+}
+
+func NewSelectField(name string, options ...SelectOption) *SelectField {
+	sf := &SelectField{
+		templateName: "fields/select.tmpl",
+		Options:      options,
+		Name:         name,
+	}
+
+	return sf
+}
+
+func (sf *SelectField) Render() template.HTML {
+	var out bytes.Buffer
+
+	t, err := template.ParseFS(Get(), sf.templateName)
+	if err != nil {
+		panic(err)
+	}
+
+	err = t.Execute(&out, sf)
+	if err != nil {
+		println(err.Error())
+		panic(err)
+	}
+
+	return template.HTML(out.String())
+}
 
 func NewTextField(label, name string) *TextField {
 	tf := &TextField{
-		Label: label,
-		Name:  name,
+		Label:        label,
+		Name:         name,
+		templateName: "fields/text.tmpl",
+		ID:           name,
 	}
-
-	tf.template, _ = template.New("textfield").Parse(fmt.Sprintf(textHtml, tf.Name, tf.Value))
 
 	return tf
 }
 
-func (t *TextField) Render(w io.Writer) error {
-
-	if err := t.template.Execute(w, t); err != nil {
-		return err
+func (tf *TextField) Template() *template.Template {
+	t, err := template.ParseFS(Get(), tf.templateName)
+	if err != nil {
+		panic(err)
 	}
 
-	return nil
+	return t
+}
+
+func (tf *TextField) Render() template.HTML {
+	var out bytes.Buffer
+
+	err := tf.Template().Execute(&out, tf)
+
+	if err != nil {
+		panic(err)
+	}
+
+	return template.HTML(out.String())
 }
 
 func (t *TextField) SetValue(v string) {

@@ -99,25 +99,33 @@ func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
 	return a, nil
 }
 
-// func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-// 	// TODO: figure out what model and action we want from the query ex: http://localhost:4000/admin?model=User&action=index
-// 	// build a some kind of "Context" object thats going to store all the info of the current action
-// 	// we need to pass some kind of metadata to the template so we know how to render the "entity" (we dont know its type here)
-// 	type AdminCtx = struct {
-// 		Model     string
-// 		Action    string
-// 		modelType Model
-// 	}
-//
-// 	items, err := a.crud.Index()
-// 	if err != nil {
-// 		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
-// 		return
-// 	}
-//
-// 	// TODO: render the template with the items
-//
-// }
+func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// TODO: figure out what model and action we want from the query ex: http://localhost:4000/admin?model=User&action=index
+	// build a some kind of "Context" object thats going to store all the info of the current action
+	// we need to pass some kind of metadata to the template so we know how to render the "entity" (we dont know its type here)
+	type AdminCtx = struct {
+		Action    string
+		modelType Model
+	}
+
+	action := r.URL.Query().Get("action")
+	// TODO: check if the action is a valid action??
+	if action == "" {
+		panic("TODO")
+	}
+
+	items, err := a.crud.Index()
+	if err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	ctx := struct {
+		Items []T
+	}{Items: items}
+
+	a.templates.RenderAction(action, ctx)
+}
 
 func (a *Admin[T]) ConfigureCrud(crud CrudInterface[T]) {
 	crud.SetModelNamePlural(crud.ModelName() + "s")

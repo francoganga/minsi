@@ -1,13 +1,16 @@
 package main
 
 import (
+	"bytes"
 	"database/sql"
 	"fmt"
+	"html/template"
 	"log"
-	"os"
+	"net/http"
 	"reflect"
 
 	"github.com/francoganga/minsi/templates"
+	"github.com/yosssi/gohtml"
 	_ "modernc.org/sqlite"
 )
 
@@ -82,13 +85,26 @@ func Q(m any, db *sql.DB) {
 
 func main() {
 
-	renderer := templates.NewRenderer()
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		fields := []templates.FieldInterface{}
+		fields = append(fields, templates.NewTextField("Name", "name"))
+		fields = append(fields, templates.NewTextField("Apellido", "apellido"))
+		fields = append(fields, templates.NewSelectField("Rol", templates.SelectOption{ID: "1", Value: "admin", Label: "Admin"}, templates.SelectOption{ID: "2", Value: "user", Label: "User"}, templates.SelectOption{ID: "3", Value: "GUEST", Label: "Guest"}))
 
-	buf, err := renderer.Parse().Key("asd").Layout("layout").Files("layout", "layout2", "index").Execute(nil)
-	if err != nil {
-		log.Fatal(err)
-	}
+		mt, err := template.ParseFS(templates.Get(), "layout.tmpl", "detail.tmpl", "list.tmpl")
+		if err != nil {
+			log.Fatal(err)
+		}
 
-	buf.WriteTo(os.Stdout)
+		var out bytes.Buffer
+
+		mt.Execute(&out, fields)
+
+		res := gohtml.Format(out.String())
+
+		w.Write([]byte(res))
+	})
+
+	println("Listening on port 4000")
+	http.ListenAndServe(":4000", nil)
 }
-
