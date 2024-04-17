@@ -15,12 +15,15 @@ func Get() embed.FS {
 	return templates
 }
 
+type templateName string
+type ActionTemplates map[string]templateName
+
 type ActionTemplate struct {
 	Title   string
-	layout  *template.Template
-	Content *template.Template
+	Layout  string
+	Content string
 	// TODO: maybe render the form if it's not nil
-	form *Form
+	Form *Form
 }
 
 type Form struct {
@@ -52,11 +55,15 @@ type SelectField struct {
 	ID           string
 }
 
-func NewSelectField(name string, options ...SelectOption) *SelectField {
+func NewSelectField(name string, options map[string]string) *SelectField {
 	sf := &SelectField{
 		templateName: "fields/select.tmpl",
-		Options:      options,
+		Options:      []SelectOption{},
 		Name:         name,
+	}
+
+	for k, v := range options {
+		sf.Options = append(sf.Options, SelectOption{ID: k, Value: v, Label: v})
 	}
 
 	return sf

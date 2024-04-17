@@ -1,16 +1,13 @@
 package main
 
 import (
-	"bytes"
 	"database/sql"
 	"fmt"
-	"html/template"
 	"log"
 	"net/http"
 	"reflect"
 
-	"github.com/francoganga/minsi/templates"
-	"github.com/yosssi/gohtml"
+	"github.com/francoganga/minsi/crud"
 	_ "modernc.org/sqlite"
 )
 
@@ -85,26 +82,27 @@ func Q(m any, db *sql.DB) {
 
 func main() {
 
-	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		fields := []templates.FieldInterface{}
-		fields = append(fields, templates.NewTextField("Name", "name"))
-		fields = append(fields, templates.NewTextField("Apellido", "apellido"))
-		fields = append(fields, templates.NewSelectField("Rol", templates.SelectOption{ID: "1", Value: "admin", Label: "Admin"}, templates.SelectOption{ID: "2", Value: "user", Label: "User"}, templates.SelectOption{ID: "3", Value: "GUEST", Label: "Guest"}))
+	db, err := sql.Open("sqlite", "file:finance.db?cache=shared")
 
-		mt, err := template.ParseFS(templates.Get(), "layout.tmpl", "detail.tmpl", "list.tmpl")
-		if err != nil {
-			log.Fatal(err)
-		}
+	if err != nil {
+		log.Fatal(err)
+	}
 
-		var out bytes.Buffer
+	err = db.Ping()
 
-		mt.Execute(&out, fields)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// actions := []string{crud.CRUD_PAGE_DETAIL}
 
-		res := gohtml.Format(out.String())
+	admin, err := crud.NewAdmin[Transactions](db)
 
-		w.Write([]byte(res))
-	})
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	println("Listening on port 4000")
+	http.Handle("/", admin)
+
+	log.Println("Listening on :4000")
 	http.ListenAndServe(":4000", nil)
 }

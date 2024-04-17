@@ -4,10 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"reflect"
 	"strings"
+
+	"github.com/francoganga/minsi/templates"
 )
 
 const (
@@ -75,9 +78,81 @@ func WithActions(actions []string) AdminOptions {
 
 // basic admin type
 type Admin[T any] struct {
-	crud    CrudInterface[T]
-	actions []string
-	filters []any
+	crud      CrudInterface[T]
+	actions   []string
+	filters   []any
+	templates templates.ActionTemplates
+}
+
+func (a *Admin[T]) RenderAction(actionName string, w io.Writer, data any) error {
+
+	switch actionName {
+	case CRUD_PAGE_DETAIL:
+		return a.templates.Render(CRUD_PAGE_DETAIL, w)
+	case CRUD_PAGE_EDIT:
+		return a.templates.Render(CRUD_PAGE_EDIT, w)
+	case CRUD_PAGE_INDEX:
+		return a.templates.Render(CRUD_PAGE_INDEX, w)
+	case CRUD_PAGE_NEW:
+		return a.templates.Render(CRUD_PAGE_NEW, w)
+	default:
+		return fmt.Errorf("Could not Render action: unknown action: %s", actionName)
+	}
+
+	typ := reflect.TypeOf(new(T))
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	at := templates.ActionTemplate{
+		// TODO: Generate a better title
+		Title:   actionName,
+		Layout:  "layout",
+		Content: "detail",
+	}
+
+	form := templates.Form{}
+
+	for i := 0; i < typ.NumField(); i++ {
+		field := typ.Field(i)
+
+		switch field.Type.Kind() {
+		case reflect.String:
+			f := templates.NewTextField(field.Name, field.Name)
+			form.Fields = append(form.Fields, f)
+		default:
+			return fmt.Errorf("Could not Render action: unsupported field type: %s", field.Type.Kind())
+		}
+	}
+
+	at.Form = &form
+
+	out, err := templates.NewRenderer().Parse().Key(actionName).Files(at.Layout, at.Content).Layout(at.Layout).Execute(data)
+	if err != nil {
+		return fmt.Errorf("Could not Render action: %w", err)
+	}
+
+	_, err = out.WriteTo(w)
+	if err != nil {
+		return fmt.Errorf("Could not Render action: %w", err)
+	}
+
+	return nil
+}
+
+func (a *Admin[T]) RenderDetail(w io.Writer, data any) error {
+	typ := reflect.TypeOf(new(T))
+	if typ.Kind() == reflect.Ptr {
+		typ = typ.Elem()
+	}
+
+	at := templates.ActionTemplate{
+		// TODO: Generate a better title
+		Title:   fmt.Sprintf("%s Detail", typ.Name()),
+		Layout:  "layout",
+		Content: "detail",
+	}
+
 }
 
 func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
@@ -96,6 +171,9 @@ func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
 		a.actions = options.actions
 	}
 
+	a.templates = make(templates.ActionTemplates)
+	a.templates[CRUD_PAGE_DETAIL] = "detail"
+
 	return a, nil
 }
 
@@ -111,12 +189,13 @@ func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	action := r.URL.Query().Get("action")
 	// TODO: check if the action is a valid action??
 	if action == "" {
-		panic("TODO")
+		http.Error(w, "Action not found", http.StatusNotFound)
+		return
 	}
 
 	items, err := a.crud.Index()
 	if err != nil {
-		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
 
@@ -124,7 +203,11 @@ func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Items []T
 	}{Items: items}
 
-	a.templates.RenderAction(action, ctx)
+	err = a.RenderAction(action, w, ctx)
+
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+	}
 }
 
 func (a *Admin[T]) ConfigureCrud(crud CrudInterface[T]) {
