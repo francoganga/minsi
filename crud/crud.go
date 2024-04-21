@@ -39,8 +39,14 @@ func (ch *CrudRequestHandler[T]) ConfigureActions() []string {
 
 func (ch *CrudRequestHandler[T]) ConfigureFilters(filters []any) {}
 
+type Entity struct {
+	Val    reflect.Value
+	Fields []string
+	Data   map[string]any
+}
+
 type CrudInterface[T any] interface {
-	Index() ([]T, error)
+	Index() ([]Entity, error)
 	// Detail(id any) (T, error)
 	// New() (T, error)
 	// Edit(id any) (T, error)
@@ -84,76 +90,106 @@ type Admin[T any] struct {
 	templates templates.ActionTemplates
 }
 
-func (a *Admin[T]) RenderAction(actionName string, w io.Writer, data any) error {
+func (a *Admin[T]) RenderIndex(w io.Writer) error {
 
-	switch actionName {
-	case CRUD_PAGE_DETAIL:
-		return a.templates.Render(CRUD_PAGE_DETAIL, w)
-	case CRUD_PAGE_EDIT:
-		return a.templates.Render(CRUD_PAGE_EDIT, w)
-	case CRUD_PAGE_INDEX:
-		return a.templates.Render(CRUD_PAGE_INDEX, w)
-	case CRUD_PAGE_NEW:
-		return a.templates.Render(CRUD_PAGE_NEW, w)
-	default:
-		return fmt.Errorf("Could not Render action: unknown action: %s", actionName)
-	}
-
-	typ := reflect.TypeOf(new(T))
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
+	items, err := a.crud.Index()
+	if err != nil {
+		return err
 	}
 
 	at := templates.ActionTemplate{
-		// TODO: Generate a better title
-		Title:   actionName,
+		Title:   fmt.Sprintf("%s Index", a.crud.ModelName()),
 		Layout:  "layout",
-		Content: "detail",
+		Content: "index",
 	}
 
-	form := templates.Form{}
+	elems := make([]templates.FieldInterface, len(items))
 
-	for i := 0; i < typ.NumField(); i++ {
-		field := typ.Field(i)
+	typ := reflect.TypeOf(new(T)).Elem()
 
-		switch field.Type.Kind() {
-		case reflect.String:
-			f := templates.NewTextField(field.Name, field.Name)
-			form.Fields = append(form.Fields, f)
-		default:
-			return fmt.Errorf("Could not Render action: unsupported field type: %s", field.Type.Kind())
+	for i := range items {
+
+		for j := 0; j < typ.NumField(); j++ {
+			field := typ.Field(j)
+
+			switch field.Type.Kind() {
+			case reflect.String:
+
+				f := templates.NewTextField(field.Name, field.Name)
+
+				f.Value = fmt.Sprintf("%v", items[i].Val.Field(j).Interface())
+
+				elems = append(elems, f)
+			case reflect.Int:
+				f := templates.NewTextField(field.Name, field.Name)
+
+				f.Value = fmt.Sprintf("%v", items[i].Val.Field(j).Interface())
+
+				elems = append(elems, f)
+
+			default:
+				return fmt.Errorf("unknown field type: %s", field.Type.Kind())
+			}
 		}
 	}
 
-	at.Form = &form
+	data := struct {
+		Items  []Entity
+		Fields []templates.FieldInterface
+	}{Items: items, Fields: elems}
 
-	out, err := templates.NewRenderer().Parse().Key(actionName).Files(at.Layout, at.Content).Layout(at.Layout).Execute(data)
-	if err != nil {
-		return fmt.Errorf("Could not Render action: %w", err)
+	for k, v := range items[0].Data {
+		fmt.Printf("%s: %v\n", k, v)
 	}
 
-	_, err = out.WriteTo(w)
+	out, err := templates.NewRenderer().
+		Parse().
+		Key(fmt.Sprintf("%s_%s", a.crud.ModelName(), CRUD_PAGE_INDEX)).
+		Files(at.Layout, at.Content).
+		Layout(at.Layout).
+		Execute(data)
+
 	if err != nil {
-		return fmt.Errorf("Could not Render action: %w", err)
+		return err
+	}
+
+	_, err = w.Write(out.Bytes())
+
+	if err != nil {
+		return err
 	}
 
 	return nil
 }
 
-func (a *Admin[T]) RenderDetail(w io.Writer, data any) error {
-	typ := reflect.TypeOf(new(T))
-	if typ.Kind() == reflect.Ptr {
-		typ = typ.Elem()
-	}
+func (a *Admin[T]) RenderAction(actionName string, w io.Writer) error {
 
-	at := templates.ActionTemplate{
-		// TODO: Generate a better title
-		Title:   fmt.Sprintf("%s Detail", typ.Name()),
-		Layout:  "layout",
-		Content: "detail",
+	switch actionName {
+	case CRUD_PAGE_INDEX:
+		return a.RenderIndex(w)
+	default:
+		return fmt.Errorf("Could not Render action: unknown action: %s", actionName)
 	}
 
 }
+
+// func (a *Admin[T]) RenderDetail(w io.Writer, data any) error {
+// 	typ := reflect.TypeOf(new(T))
+// 	if typ.Kind() == reflect.Ptr {
+// 		typ = typ.Elem()
+// 	}
+//
+// 	at := templates.ActionTemplate{
+// 		Title:   fmt.Sprintf("%s Detail", typ.Name()),
+// 		Layout:  "layout",
+// 		Content: "detail",
+// 	}
+//
+// 	key := fmt.Sprintf("%s_%s", typ.Name(), CRUD_PAGE_DETAIL)
+//
+// 	out, err := templates.NewRenderer().Parse().Key(key).Files(at.Layout, at.Content).Layout(at.Layout).Execute(data)
+//
+// }
 
 func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
 	a := &Admin[T]{}
@@ -188,25 +224,12 @@ func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	action := r.URL.Query().Get("action")
 	// TODO: check if the action is a valid action??
-	if action == "" {
-		http.Error(w, "Action not found", http.StatusNotFound)
-		return
-	}
 
-	items, err := a.crud.Index()
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	ctx := struct {
-		Items []T
-	}{Items: items}
-
-	err = a.RenderAction(action, w, ctx)
+	err := a.RenderAction(action, w)
 
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
 	}
 }
 
@@ -276,15 +299,16 @@ func NewCrud[T any](db *sql.DB) (*Crud[T], error) {
 	return c, nil
 }
 
-func (c *Crud[T]) Index() ([]T, error) {
-	var res []T
+// TODO: Refactor to use a Wrapper struct so we dont repeat the fields
+func (c *Crud[T]) Index() ([]Entity, error) {
+	var res []Entity
 
 	m, err := NewModel(new(T))
 	if err != nil {
 		return res, err
 	}
 
-	q := fmt.Sprintf("SELECT %s FROM %s LIMIT 5", formatFields(m.Fields), m.ModelName)
+	q := fmt.Sprintf("SELECT %s FROM %s", formatFields(m.Fields), m.ModelName)
 
 	rows, err := c.db.Query(q)
 
@@ -298,10 +322,16 @@ func (c *Crud[T]) Index() ([]T, error) {
 
 		sFields := []any{}
 
+		entity := Entity{
+			Data: make(map[string]any),
+		}
+
 		for i := 0; i < m.Type.NumField(); i++ {
 			field := v.Field(i)
 
 			sFields = append(sFields, field.Addr().Interface())
+			entity.Data[m.Fields[i]] = field.Addr().Interface()
+			entity.Fields = append(entity.Fields, c.model.Type.Field(i).Name)
 		}
 
 		err := rows.Scan(sFields...)
@@ -312,7 +342,9 @@ func (c *Crud[T]) Index() ([]T, error) {
 
 		rt := s.(*T)
 
-		res = append(res, *rt)
+		entity.Val = reflect.ValueOf(*rt)
+
+		res = append(res, entity)
 	}
 
 	return res, nil
@@ -331,12 +363,12 @@ func NewModel(m any) (Model, error) {
 
 	model := Model{
 		Type:      t,
-		ModelName: t.Name(),
+		ModelName: strings.ToLower(t.Name()),
 	}
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		model.Fields = append(model.Fields, strings.ToLower(field.Name))
+		model.Fields = append(model.Fields, field.Name)
 	}
 
 	v := reflect.ValueOf(m)

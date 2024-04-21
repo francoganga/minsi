@@ -1,7 +1,15 @@
 {{define "title"}}Index{{end}}
 {{define "scripts"}}{{end}}
 {{define "body" }}
- {{ range .Fields }}
-    {{.ID}}
- {{end}}
+   <h1>Index</h1>
+
+   {{ range $index, $val := .Items }}
+      {{ range $i, $f := .Fields }}
+         <pre>{{ $f }}: {{ index $val.Data $f }}</pre>
+      {{ end }}
+
+      <hr>
+
+   {{ end }}
+
 {{end}}

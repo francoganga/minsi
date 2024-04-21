@@ -2,31 +2,17 @@ package main
 
 import (
 	"database/sql"
-	"fmt"
 	"log"
 	"net/http"
-	"reflect"
 
 	"github.com/francoganga/minsi/crud"
-	_ "modernc.org/sqlite"
+	_ "github.com/go-sql-driver/mysql"
 )
-
-func formatFields(fields []string) string {
-	s := ""
-	for i, f := range fields {
-		if i == len(fields)-1 {
-			s += f
-			break
-		}
-		s += f + ","
-	}
-	return s
-}
 
 type User struct {
 	ID       int
-	Name     string
-	Lastname string
+	Username string
+	Roles    string
 }
 
 type Post struct {
@@ -36,53 +22,23 @@ type Post struct {
 }
 
 type Transactions struct {
-	ID     int
-	Date   string
-	Amount int
+	ID          int
+	Amount      int
+	Balance     int
+	Description string
 }
 
-func Q(m any, db *sql.DB) {
-
-	q := `SELECT id, name FROM user`
-
-	rows, err := db.Query(q)
-
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	t := reflect.TypeOf(m)
-
-	if t.Kind() == reflect.Ptr {
-		t = t.Elem()
-	}
-
-	for rows.Next() {
-
-		struct_ := reflect.New(t).Interface()
-		val := reflect.ValueOf(struct_).Elem()
-		_ = val
-
-		sFields := []any{}
-
-		for i := 0; i < t.NumField(); i++ {
-			field := t.Field(i)
-			vv := val.Field(i)
-			fmt.Printf("field=%#v, canSet=%+v\n", field.Name, vv.Kind())
-
-			sFields = append(sFields, vv.Addr().Interface())
-		}
-
-		err := rows.Scan(sFields...)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
+type Necesidad struct {
+	ID                 int
+	Link               string
+	Estado             string
+	Ano_presupuestario int
+	Mail               string
 }
 
 func main() {
 
-	db, err := sql.Open("sqlite", "file:finance.db?cache=shared")
+	db, err := sql.Open("mysql", "root:1234@tcp(localhost:3306)/tramites")
 
 	if err != nil {
 		log.Fatal(err)
@@ -95,7 +51,7 @@ func main() {
 	}
 	// actions := []string{crud.CRUD_PAGE_DETAIL}
 
-	admin, err := crud.NewAdmin[Transactions](db)
+	admin, err := crud.NewAdmin[User](db)
 
 	if err != nil {
 		log.Fatal(err)

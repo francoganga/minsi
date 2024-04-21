@@ -40,12 +40,14 @@ type TextField struct {
 	Name         string
 	Value        string
 	ID           string
+	CanEdit      bool
 }
 
 type SelectOption struct {
-	ID    string
-	Value string
-	Label string
+	ID      string
+	Value   string
+	Label   string
+	CanEdit bool
 }
 
 type SelectField struct {
