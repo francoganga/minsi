@@ -1,0 +1,6 @@
+<div class="row mb-4">
+	<div class="col-12 col-md-6">
+		<label for="{{ .ID }}"> {{ .Label }}</label>
+		<input {{ if not .CanEdit }}disabled{{end}} class="form-control" name="{{ .Name }}" id="{{ .ID }}" type="number" value="{{ .Value }}" />
+	</div>
+</div>

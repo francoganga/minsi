@@ -1,0 +1,14 @@
+{{define "title"}} {{.Title }} {{end}}
+{{define "body"}}
+
+
+   <form method="POST" action="">
+      {{ range .Fields }}
+         {{ .Render }}
+      {{end}}
+
+      <input type="submit" value="Submit" />
+   </form>
+
+
+{{end}}

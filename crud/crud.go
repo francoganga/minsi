@@ -4,13 +4,10 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"reflect"
 	"strings"
-
-	"github.com/francoganga/minsi/templates"
 )
 
 const (
@@ -48,7 +45,7 @@ type Entity struct {
 type CrudInterface[T any] interface {
 	Index() ([]Entity, error)
 	// Detail(id any) (T, error)
-	// New() (T, error)
+	//New(T) error
 	// Edit(id any) (T, error)
 	// Delete(id any) (T, error)
 
@@ -67,197 +64,6 @@ type CrudHandler http.HandlerFunc
 // 	// TODO: define Filters type
 // 	ConfigureFilters(filters []any)
 // }
-
-type adminOptions struct {
-	actions []string
-	filters []any
-}
-type AdminOptions func(*adminOptions) error
-
-func WithActions(actions []string) AdminOptions {
-	return func(opts *adminOptions) error {
-		opts.actions = actions
-
-		return nil
-	}
-}
-
-// basic admin type
-type Admin[T any] struct {
-	crud      CrudInterface[T]
-	actions   []string
-	filters   []any
-	templates templates.ActionTemplates
-}
-
-func (a *Admin[T]) RenderIndex(w io.Writer) error {
-
-	items, err := a.crud.Index()
-	if err != nil {
-		return err
-	}
-
-	at := templates.ActionTemplate{
-		Title:   fmt.Sprintf("%s Index", a.crud.ModelName()),
-		Layout:  "layout",
-		Content: "index",
-	}
-
-	elems := make([]templates.FieldInterface, len(items))
-
-	typ := reflect.TypeOf(new(T)).Elem()
-
-	for i := range items {
-
-		for j := 0; j < typ.NumField(); j++ {
-			field := typ.Field(j)
-
-			switch field.Type.Kind() {
-			case reflect.String:
-
-				f := templates.NewTextField(field.Name, field.Name)
-
-				f.Value = fmt.Sprintf("%v", items[i].Val.Field(j).Interface())
-
-				elems = append(elems, f)
-			case reflect.Int:
-				f := templates.NewTextField(field.Name, field.Name)
-
-				f.Value = fmt.Sprintf("%v", items[i].Val.Field(j).Interface())
-
-				elems = append(elems, f)
-
-			default:
-				return fmt.Errorf("unknown field type: %s", field.Type.Kind())
-			}
-		}
-	}
-
-	data := struct {
-		Items  []Entity
-		Fields []templates.FieldInterface
-	}{Items: items, Fields: elems}
-
-	for k, v := range items[0].Data {
-		fmt.Printf("%s: %v\n", k, v)
-	}
-
-	out, err := templates.NewRenderer().
-		Parse().
-		Key(fmt.Sprintf("%s_%s", a.crud.ModelName(), CRUD_PAGE_INDEX)).
-		Files(at.Layout, at.Content).
-		Layout(at.Layout).
-		Execute(data)
-
-	if err != nil {
-		return err
-	}
-
-	_, err = w.Write(out.Bytes())
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (a *Admin[T]) RenderAction(actionName string, w io.Writer) error {
-
-	switch actionName {
-	case CRUD_PAGE_INDEX:
-		return a.RenderIndex(w)
-	default:
-		return fmt.Errorf("Could not Render action: unknown action: %s", actionName)
-	}
-
-}
-
-// func (a *Admin[T]) RenderDetail(w io.Writer, data any) error {
-// 	typ := reflect.TypeOf(new(T))
-// 	if typ.Kind() == reflect.Ptr {
-// 		typ = typ.Elem()
-// 	}
-//
-// 	at := templates.ActionTemplate{
-// 		Title:   fmt.Sprintf("%s Detail", typ.Name()),
-// 		Layout:  "layout",
-// 		Content: "detail",
-// 	}
-//
-// 	key := fmt.Sprintf("%s_%s", typ.Name(), CRUD_PAGE_DETAIL)
-//
-// 	out, err := templates.NewRenderer().Parse().Key(key).Files(at.Layout, at.Content).Layout(at.Layout).Execute(data)
-//
-// }
-
-func NewAdmin[T any](db *sql.DB, opts ...AdminOptions) (*Admin[T], error) {
-	a := &Admin[T]{}
-	crud, _ := NewCrud[T](db)
-	a.crud = crud
-	var options adminOptions
-
-	for _, opt := range opts {
-		err := opt(&options)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if len(options.actions) > 0 {
-		a.actions = options.actions
-	}
-
-	a.templates = make(templates.ActionTemplates)
-	a.templates[CRUD_PAGE_DETAIL] = "detail"
-
-	return a, nil
-}
-
-func (a *Admin[T]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// TODO: figure out what model and action we want from the query ex: http://localhost:4000/admin?model=User&action=index
-	// build a some kind of "Context" object thats going to store all the info of the current action
-	// we need to pass some kind of metadata to the template so we know how to render the "entity" (we dont know its type here)
-	type AdminCtx = struct {
-		Action    string
-		modelType Model
-	}
-
-	action := r.URL.Query().Get("action")
-	// TODO: check if the action is a valid action??
-
-	err := a.RenderAction(action, w)
-
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
-		return
-	}
-}
-
-func (a *Admin[T]) ConfigureCrud(crud CrudInterface[T]) {
-	crud.SetModelNamePlural(crud.ModelName() + "s")
-	crud.SetModelNameSingular(crud.ModelName())
-}
-
-func (a *Admin[T]) ConfigureActions() []string {
-	fmt.Println("original ConfigureActions called")
-	return []string{CRUD_PAGE_INDEX, CRUD_PAGE_NEW, CRUD_PAGE_EDIT, CRUD_PAGE_DETAIL}
-}
-
-func (a *Admin[T]) ConfigureFilters(filters []any) {
-	a.filters = filters
-}
-
-func (a *Admin[T]) Actions() []string {
-	return a.actions
-}
-
-func (a *Admin[T]) Dbg() {
-	a.ConfigureCrud(a.crud)
-	a.actions = a.ConfigureActions()
-	a.ConfigureFilters(a.filters)
-
-	fmt.Printf("a: %#v\n", a)
-}
 
 type Crud[T any] struct {
 	db                *sql.DB
@@ -299,7 +105,6 @@ func NewCrud[T any](db *sql.DB) (*Crud[T], error) {
 	return c, nil
 }
 
-// TODO: Refactor to use a Wrapper struct so we dont repeat the fields
 func (c *Crud[T]) Index() ([]Entity, error) {
 	var res []Entity
 
@@ -323,7 +128,8 @@ func (c *Crud[T]) Index() ([]Entity, error) {
 		sFields := []any{}
 
 		entity := Entity{
-			Data: make(map[string]any),
+			Data:   make(map[string]any),
+			Fields: c.model.Fields,
 		}
 
 		for i := 0; i < m.Type.NumField(); i++ {
@@ -331,7 +137,6 @@ func (c *Crud[T]) Index() ([]Entity, error) {
 
 			sFields = append(sFields, field.Addr().Interface())
 			entity.Data[m.Fields[i]] = field.Addr().Interface()
-			entity.Fields = append(entity.Fields, c.model.Type.Field(i).Name)
 		}
 
 		err := rows.Scan(sFields...)
@@ -349,6 +154,19 @@ func (c *Crud[T]) Index() ([]Entity, error) {
 
 	return res, nil
 }
+
+// func (c *Crud[T]) New(elem T) error {
+//
+// 	typ := reflect.TypeOf(elem)
+// 	val := reflect.ValueOf(elem)
+// 	if typ.Kind() == reflect.Ptr {
+// 		val = val.Elem()
+// 	}
+//
+// 	q := "INSERT INTO " + c.model.ModelName + " (" + formatFields(c.model.Fields) + ") VALUES (" + formatFieldsPlaceholders(c.model.Fields) + ")"
+//
+// 	return fmt.Errorf("not implemented")
+// }
 
 type Model struct {
 	Type      reflect.Type
@@ -508,6 +326,21 @@ func formatFields(fields []string) string {
 		s += f + ","
 	}
 	return s
+}
+
+func formatFieldsPlaceholders(fields []string) string {
+
+	s := ""
+
+	for i, f := range fields {
+		if i == len(fields)-1 {
+			s += fmt.Sprintf("'%s'", f)
+			break
+		}
+		s += fmt.Sprintf("?,", f)
+	}
+
+	panic("TODO")
 }
 
 // func MakeCrud(m any) (Crud, error) {
